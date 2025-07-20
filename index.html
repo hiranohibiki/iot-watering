@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Sensor Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin: 10px;
+            font-weight: bold;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .pump-control {
+            text-align: center;
+        }
+        .pump-btn {
+            padding: 15px 30px;
+            margin: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .pump-on {
+            background-color: #dc3545;
+            color: white;
+        }
+        .pump-off {
+            background-color: #28a745;
+            color: white;
+        }
+        .current-values {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .value-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .value-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .value-unit {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .threshold-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .threshold-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .threshold-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #007bff;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+        }
+        .stat-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        .stat-value {
+            color: #007bff;
+            font-weight: bold;
+        }
+        .threshold-display {
+            margin-bottom: 15px;
+        }
+        .threshold-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .threshold-label {
+            font-weight: bold;
+            color: #495057;
+        }
+        .threshold-value {
+            color: #28a745;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .threshold-reason {
+            color: #6c757d;
+            font-style: italic;
+            font-size: 0.9em;
+        }
+        .threshold-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+        .threshold-btn:hover {
+            background: #218838;
+        }
+        .current-threshold {
+            margin-bottom: 15px;
+        }
+        .manual-control {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #dee2e6;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .threshold-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .threshold-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+        .manual-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .manual-btn:hover {
+            background: #0056b3;
+        }
+        .pump-indicator {
+            display: inline-block;
+            margin-left: 10px;
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 1em;
+            background: #ccc;
+            color: #fff;
+            vertical-align: middle;
+            transition: background 0.2s, color 0.2s;
+        }
+        .pump-indicator.on {
+            background: #dc3545;
+            color: #fff;
+        }
+        .pump-indicator.off {
+            background: #28a745;
+            color: #fff;
+        }
+        .stat-avg {
+            color: #888;
+            font-size: 0.95em;
+            margin-bottom: 2px;
+            margin-top: -8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌱 IoT Sensor Dashboard</h1>
+            <div id="connectionStatus" class="status disconnected">MQTT: 未接続</div>
+        </div>
+
+        <div class="current-values">
+            <div class="value-card">
+                <h3>🌡️ 温度</h3>
+                <div id="tempValue" class="value-number">--</div>
+                <div id="avgTemp" class="stat-avg">--</div>
+                <div class="value-unit">°C</div>
+            </div>
+            <div class="value-card">
+                <h3>💧 湿度</h3>
+                <div id="humidValue" class="value-number">--</div>
+                <div id="avgHumid" class="stat-avg">--</div>
+                <div class="value-unit">%</div>
+            </div>
+            <div class="value-card">
+                <h3>🌪️ 気圧</h3>
+                <div id="pressureValue" class="value-number">--</div>
+                <div id="avgPressure" class="stat-avg">--</div>
+                <div class="value-unit">hPa</div>
+            </div>
+            <div class="value-card">
+                <h3>🌱 土壌水分</h3>
+                <div id="soilValue" class="value-number">--</div>
+                <div id="avgSoil" class="stat-avg">--</div>
+                <div class="value-unit">analog</div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3>🌡️ 温度履歴</h3>
+                <canvas id="tempChart" width="400" height="200"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>💧 湿度履歴</h3>
+                <canvas id="humidChart" width="400" height="200"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>🌪️ 気圧履歴</h3>
+                <canvas id="pressureChart" width="400" height="200"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>🌱 土壌水分履歴</h3>
+                <canvas id="soilChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h2>🚰 ポンプ制御 <span id="pumpStateIndicator" class="pump-indicator off">OFF</span></h2>
+            <div class="pump-control">
+                <button id="pumpOnBtn" class="pump-btn pump-on">ポンプ ON</button>
+                <button id="pumpOffBtn" class="pump-btn pump-off">ポンプ OFF</button>
+            </div>
+        </div>
+
+        <div class="threshold-section">
+            <h2>🧠 自動閾値制御</h2>
+            <div class="threshold-info">
+                <div class="threshold-card">
+                    <h3>🎯 計算された閾値</h3>
+                    <div class="threshold-display">
+                        <div class="threshold-item">
+                            <span class="threshold-label">土壌水分閾値:</span>
+                            <span id="calculatedThreshold" class="threshold-value">--</span>
+                        </div>
+                        <div class="threshold-item">
+                            <span class="threshold-label">計算根拠:</span>
+                            <span id="thresholdReason" class="threshold-reason">--</span>
+                        </div>
+                    </div>
+                    <button id="updateThresholdBtn" class="threshold-btn">閾値を更新</button>
+                </div>
+                <div class="threshold-card">
+                    <h3>⚙️ 現在の閾値設定</h3>
+                    <div class="current-threshold">
+                        <div class="threshold-item">
+                            <span class="threshold-label">現在の閾値:</span>
+                            <span id="currentThreshold" class="threshold-value">--</span>
+                        </div>
+                        <div class="manual-control">
+                            <label for="manualThreshold">手動設定:</label>
+                            <div class="input-group">
+                                <input type="number" id="manualThreshold" min="500" max="1500" value="1000" class="threshold-input">
+                                <button id="setManualThresholdBtn" class="manual-btn">設定</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MQTT設定
+        // 安定性の高いブローカーを選択
+        const mqttBroker = 'wss://test.mosquitto.org:8081'; // より安定したブローカー
+        // 他の選択肢:
+        // const mqttBroker = 'wss://broker.emqx.io:8084/mqtt'; // EMQX (高速)
+        // const mqttBroker = 'wss://mqtt.eclipseprojects.io:443/mqtt'; // Eclipse (安定)
+        // const mqttBroker = 'wss://broker.hivemq.com:8884'; // HiveMQ (元の設定)
+        
+        const topicPrefix = 'watering/';
+        let chipId = 'd4a9a5'; // 実際のchipIdに変更してください
+
+        // MQTTクライアント
+        const client = mqtt.connect(mqttBroker, {
+            clientId: 'dashboard-' + Math.random().toString(16).substr(2, 8),
+            reconnectPeriod: 5000, // 5秒ごとに再接続試行
+            connectTimeout: 10000, // 10秒でタイムアウト
+            keepalive: 60 // 60秒のキープアライブ
+        });
+
+        // チャート設定
+        const tempCtx = document.getElementById('tempChart').getContext('2d');
+        const humidCtx = document.getElementById('humidChart').getContext('2d');
+        const pressureCtx = document.getElementById('pressureChart').getContext('2d');
+        const soilCtx = document.getElementById('soilChart').getContext('2d');
+
+        const tempChart = new Chart(tempCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '温度 (°C)',
+                    data: [],
+                    borderColor: '#ff6384',
+                    backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return value.toFixed(1);
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '°C';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const humidChart = new Chart(humidCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '湿度 (%)',
+                    data: [],
+                    borderColor: '#36a2eb',
+                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        const pressureChart = new Chart(pressureCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '気圧 (hPa)',
+                    data: [],
+                    borderColor: '#ffcd56',
+                    backgroundColor: 'rgba(255, 205, 86, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        const soilChart = new Chart(soilCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '土壌水分',
+                    data: [],
+                    borderColor: '#4bc0c0',
+                    backgroundColor: 'rgba(75, 192, 192, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        },
+                        ticks: {
+                            callback: function(value) {
+                                return Math.round(value);
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(0,0,0,0.1)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + Math.round(context.parsed.y);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // データ保持用
+        const maxDataPoints = 30; // データポイント数を減らして見やすく
+        let tempLabels = [];
+        let humidLabels = [];
+        let pressureLabels = [];
+        let soilLabels = [];
+        
+        // 統計データ保持用
+        let tempData = [];
+        let humidData = [];
+        let soilData = [];
+        let currentThreshold = 1000; // 現在の閾値
+        let actualThreshold = 1000; // ESP8266の実際の閾値
+        let pumpState = 'OFF';
+
+        // MQTT接続
+        client.on('connect', function () {
+            console.log('MQTT接続成功');
+            document.getElementById('connectionStatus').textContent = 'MQTT: 接続済み';
+            document.getElementById('connectionStatus').className = 'status connected';
+            
+            // トピックをサブスクライブ
+            client.subscribe(topicPrefix + chipId + '/#');
+            
+            // 現在の閾値を取得
+            requestCurrentThreshold();
+        });
+
+        client.on('error', function (error) {
+            console.error('MQTT接続エラー:', error);
+            document.getElementById('connectionStatus').textContent = 'MQTT: 接続エラー - 再接続中...';
+            document.getElementById('connectionStatus').className = 'status disconnected';
+        });
+
+        client.on('disconnect', function () {
+            console.log('MQTT接続切断');
+            document.getElementById('connectionStatus').textContent = 'MQTT: 切断 - 再接続中...';
+            document.getElementById('connectionStatus').className = 'status disconnected';
+        });
+
+        client.on('reconnect', function () {
+            console.log('MQTT再接続試行');
+            document.getElementById('connectionStatus').textContent = 'MQTT: 再接続中...';
+            document.getElementById('connectionStatus').className = 'status disconnected';
+        });
+
+        // メッセージ受信
+        client.on('message', function (topic, message) {
+            const value = parseFloat(message.toString());
+            const time = new Date().toLocaleTimeString();
+
+            console.log('受信:', topic, '=', value);
+
+            if (topic.includes('/temperature')) {
+                updateValue('tempValue', value.toFixed(1));
+                updateChartData(tempChart, value, time, tempLabels, '温度');
+                updateStatistics('temp', value);
+            } else if (topic.includes('/humidity')) {
+                updateValue('humidValue', value.toFixed(1));
+                updateChartData(humidChart, value, time, humidLabels, '湿度');
+                updateStatistics('humid', value);
+            } else if (topic.includes('/pressure')) {
+                updateValue('pressureValue', value.toFixed(1));
+                updateChartData(pressureChart, value, time, pressureLabels, '気圧');
+            } else if (topic.includes('/soil')) {
+                updateValue('soilValue', value.toFixed(0));
+                updateChartData(soilChart, value, time, soilLabels, '土壌水分');
+                updateStatistics('soil', value);
+            } else if (topic.includes('/current_threshold')) {
+                // ESP8266から現在の閾値を受信
+                actualThreshold = parseInt(value);
+                document.getElementById('currentThreshold').textContent = actualThreshold;
+                console.log('現在の閾値受信:', actualThreshold);
+            } else if (topic.includes('/pump_state')) {
+                // ポンプ状態を受信
+                pumpState = message.toString().trim();
+                updatePumpStateUI();
+                console.log('ポンプ状態:', pumpState);
+            }
+        });
+
+        // 値更新
+        function updateValue(elementId, value) {
+            document.getElementById(elementId).textContent = value;
+        }
+
+        // チャートデータ更新
+        function updateChartData(chart, value, time, labels, sensorName) {
+            const dataset = chart.data.datasets[0];
+            
+            dataset.data.push(value);
+            labels.push(time);
+
+            // データポイント数を制限
+            if (dataset.data.length > maxDataPoints) {
+                dataset.data.shift();
+                labels.shift();
+            }
+
+            // 時間ラベルを更新
+            chart.data.labels = labels;
+
+            // グラフのタイトルを更新
+            chart.options.plugins.title = {
+                display: true,
+                text: `${sensorName}: ${value}`
+            };
+
+            chart.update('none'); // アニメーションなしで更新
+        }
+
+        // ポンプ制御
+        document.getElementById('pumpOnBtn').addEventListener('click', function() {
+            client.publish(topicPrefix + chipId + '/pump', '1');
+            console.log('ポンプON送信');
+        });
+
+        document.getElementById('pumpOffBtn').addEventListener('click', function() {
+            client.publish(topicPrefix + chipId + '/pump', '0');
+            console.log('ポンプOFF送信');
+        });
+
+        // chipId設定（必要に応じて変更）
+        function setChipId(newChipId) {
+            chipId = newChipId;
+            if (client.connected) {
+                client.subscribe(topicPrefix + chipId + '/#');
+            }
+        }
+
+        // 統計データ更新
+        function updateStatistics(type, value) {
+            switch(type) {
+                case 'temp':
+                    tempData.push(value);
+                    if (tempData.length > 20) tempData.shift();
+                    break;
+                case 'humid':
+                    humidData.push(value);
+                    if (humidData.length > 20) humidData.shift();
+                    break;
+                case 'soil':
+                    soilData.push(value);
+                    if (soilData.length > 20) soilData.shift();
+                    break;
+            }
+            
+            // 統計を更新
+            updateStatisticsDisplay();
+            
+            // 閾値を計算
+            calculateThreshold();
+        }
+
+        // 統計表示更新
+        function updateStatisticsDisplay() {
+            if (tempData.length > 0) {
+                const avgTemp = tempData.reduce((a, b) => a + b, 0) / tempData.length;
+                document.getElementById('avgTemp').textContent = `平均${avgTemp.toFixed(1)}°C`;
+            } else {
+                document.getElementById('avgTemp').textContent = '--';
+            }
+            
+            if (humidData.length > 0) {
+                const avgHumid = humidData.reduce((a, b) => a + b, 0) / humidData.length;
+                document.getElementById('avgHumid').textContent = `平均${avgHumid.toFixed(1)}%`;
+            } else {
+                document.getElementById('avgHumid').textContent = '--';
+            }
+            
+            if (pressureChart.data.datasets[0].data.length > 0) {
+                const avgPressure = pressureChart.data.datasets[0].data.reduce((a, b) => a + b, 0) / pressureChart.data.datasets[0].data.length;
+                document.getElementById('avgPressure').textContent = `平均${avgPressure.toFixed(1)}hPa`;
+            } else {
+                document.getElementById('avgPressure').textContent = '--';
+            }
+            
+            if (soilData.length > 0) {
+                const avgSoil = soilData.reduce((a, b) => a + b, 0) / soilData.length;
+                document.getElementById('avgSoil').textContent = `平均${avgSoil.toFixed(0)}`;
+            } else {
+                document.getElementById('avgSoil').textContent = '--';
+            }
+        }
+
+        // 閾値計算
+        function calculateThreshold() {
+            if (tempData.length < 5 || humidData.length < 5 || soilData.length < 5) {
+                return; // 十分なデータがない場合は計算しない
+            }
+            
+            const avgTemp = tempData.reduce((a, b) => a + b, 0) / tempData.length;
+            const avgHumid = humidData.reduce((a, b) => a + b, 0) / humidData.length;
+            const avgSoil = soilData.reduce((a, b) => a + b, 0) / soilData.length;
+            
+            // 新しい計算式のパラメータ
+            const Base = 600;        // 基準値
+            const T0 = 20;           // 温度の基準値
+            const H0 = 50;           // 湿度の基準値
+            const α = 5.0;           // 温度による補正係数
+            const β = -1.0;          // 湿度による補正係数
+            
+            // 新しい計算式: Threshold = Base + α⋅(T−T0) + β⋅(H−H0)
+            const tempCorrection = α * (avgTemp - T0);
+            const humidCorrection = β * (avgHumid - H0);
+            const newThreshold = Math.round(Base + tempCorrection + humidCorrection);
+            
+            // 計算根拠の詳細表示
+            const reason = `計算式: ${Base} + ${α}×(${avgTemp.toFixed(1)}-${T0}) + ${β}×(${avgHumid.toFixed(1)}-${H0}) = ${Base} + ${tempCorrection.toFixed(1)} + ${humidCorrection.toFixed(1)} = ${newThreshold}`;
+            
+            // 表示更新
+            document.getElementById('calculatedThreshold').textContent = newThreshold;
+            document.getElementById('thresholdReason').textContent = reason;
+            
+            currentThreshold = newThreshold;
+        }
+
+        // 現在の閾値を取得
+        function requestCurrentThreshold() {
+            const requestTopic = topicPrefix + chipId + '/request_threshold';
+            client.publish(requestTopic, 'get');
+            console.log('閾値取得要求送信:', requestTopic);
+        }
+
+        // 閾値更新ボタン
+        document.getElementById('updateThresholdBtn').addEventListener('click', function() {
+            if (currentThreshold !== 1000) {
+                // MQTTで閾値を送信
+                const thresholdTopic = topicPrefix + chipId + '/threshold';
+                client.publish(thresholdTopic, currentThreshold.toString());
+                console.log('閾値更新送信:', thresholdTopic, '=', currentThreshold);
+                
+                // ボタンを一時的に無効化
+                const btn = this;
+                btn.textContent = '更新中...';
+                btn.disabled = true;
+                
+                setTimeout(() => {
+                    btn.textContent = '閾値を更新';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        // 手動閾値設定ボタン
+        document.getElementById('setManualThresholdBtn').addEventListener('click', function() {
+            const manualValue = parseInt(document.getElementById('manualThreshold').value);
+            if (manualValue >= 500 && manualValue <= 1500) {
+                // 手動設定値を計算値として使用
+                currentThreshold = manualValue;
+                document.getElementById('calculatedThreshold').textContent = manualValue;
+                document.getElementById('thresholdReason').textContent = '手動設定';
+                
+                // MQTTで閾値を送信
+                const thresholdTopic = topicPrefix + chipId + '/threshold';
+                client.publish(thresholdTopic, manualValue.toString());
+                console.log('手動閾値設定送信:', thresholdTopic, '=', manualValue);
+                
+                // ボタンを一時的に無効化
+                const btn = this;
+                btn.textContent = '設定中...';
+                btn.disabled = true;
+                
+                setTimeout(() => {
+                    btn.textContent = '設定';
+                    btn.disabled = false;
+                }, 2000);
+            } else {
+                alert('閾値は500-1500の範囲で設定してください。');
+            }
+        });
+
+        // ポンプ状態UI更新
+        function updatePumpStateUI() {
+            const indicator = document.getElementById('pumpStateIndicator');
+            if (pumpState === 'ON') {
+                indicator.textContent = 'ON';
+                indicator.classList.remove('off');
+                indicator.classList.add('on');
+            } else {
+                indicator.textContent = 'OFF';
+                indicator.classList.remove('on');
+                indicator.classList.add('off');
+            }
+        }
+
+        // ページ読み込み時の初期化
+        window.addEventListener('load', function() {
+            updatePumpStateUI();
+            console.log('ダッシュボード初期化完了');
+        });
+    </script>
+</body>
+</html> 
